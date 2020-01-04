@@ -219,8 +219,20 @@ messages_schema = MessageSchema(many=True)
 
 class AppSettings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    key = db.Column(db.String(80), nullable=False)
+    key = db.Column(db.String(80), nullable=False, unique=True)
     value = db.Column(db.String(80), nullable=False)
+
+    def __init__(self, key, value):
+        self.key = key
+        self.value = value
+
+
+class AppSettingsSchema(ma.Schema):
+    class Meta:
+        fields = ('key', 'value')
+
+
+app_settings_schema = AppSettingsSchema(many=True)
 
 
 @app.route('/')
@@ -248,14 +260,6 @@ def create_user():
     # to_return['access_token']=access_token
     # to_return['refresh_token']=refresh_token
     return user_details_schema.jsonify(new_user)
-
-
-@app.route('/api/user', methods=['GET'])
-def get_users():
-    all_users = User.query.all()
-    User.query.get
-    result = users_details_schema.dump(all_users)
-    return jsonify(result)
 
 
 @app.route('/api/user/<id>', methods=['GET'])
@@ -500,21 +504,14 @@ def review_report(id):
 
     if ban_user:
         report = get_report(id)
-        advertisment = get_advertisement(report.advertisement)
-        user = advertisment.owner
+        advertisement = get_advertisement(report.advertisement)
+        user = advertisement.owner
         delete_user(user)
 
 
-@app.route('/api/category', methods=['POST'])
-def create_category():
-    name = request.json['category_name']
-    new_category = Category(name)
-
-    db.session.add(new_category)
-    db.session.commit()
-
-    return category_schema.jsonify(new_category)
-
+@app.route("/api/mod/ban/<id>",methods=['POST'])
+def ban_user(id):
+    delete_user(id)
 
 @app.route('/api/category', methods=['GET'])
 @jwt_required
@@ -536,14 +533,6 @@ def update_category(id):
     category = Category.query.get(id)
     category.category_name = request.json['category_name']
 
-    db.session.commit()
-    return category_schema.jsonify(category)
-
-
-@app.route('/api/category/<id>', methods=['DELETE'])
-def delete_category(id):
-    category = Category.query.get(id)
-    db.session.delete(category)
     db.session.commit()
     return category_schema.jsonify(category)
 
@@ -599,6 +588,59 @@ def create_message(id):
     messages = Message.query.filter_by(conversation=id)
 
     return messages_schema.jsonify(messages)
+
+
+@app.route("/api/admin/price", methods=["POST"])
+def set_price():
+    new_price = request.json["newPrice"]
+    price = AppSettings.query.filter_by(key="price").first()
+
+    if price is None:
+        price = AppSettings("price", new_price)
+        db.session.add(price)
+    else:
+        price.value = new_price
+
+    db.session.commit()
+    settings = AppSettings.query.all()
+    return app_settings_schema.jsonify(settings)
+
+
+@app.route('/api/admin/users', methods=['GET'])
+def get_users():
+    all_users = User.query.all()
+    result = users_details_schema.dump(all_users)
+    return jsonify(result)
+
+
+@app.route('/api/admin/users/<id>', methods=['PUT'])
+def change_moderator_status(id):
+    user = User.query.get(id)
+    is_moderator = request.json["isModerator"]
+    user.is_moderator = is_moderator
+
+    db.session.commit()
+
+    return user_details_schema.jsonify(user)
+
+
+@app.route('/api/admin/category', methods=['POST'])
+def create_category():
+    name = request.json['category_name']
+    new_category = Category(name)
+
+    db.session.add(new_category)
+    db.session.commit()
+
+    return category_schema.jsonify(new_category)
+
+
+@app.route('/api/admin/category/<id>', methods=['DELETE'])
+def delete_category(id):
+    category = Category.query.get(id)
+    db.session.delete(category)
+    db.session.commit()
+    return category_schema.jsonify(category)
 
 
 if __name__ == '__main__':
