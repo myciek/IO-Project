@@ -179,6 +179,19 @@ class Conversation(db.Model):
     person_a = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     person_b = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
+    def __init__(self, person_a, person_b):
+        self.person_a = person_a
+        self.person_b = person_b
+
+
+class ConversationSchema(ma.Schema):
+    class Meta:
+        fields = ("id", "person_a", "person_b")
+
+
+conversation_schema = ConversationSchema()
+conversations_schema = ConversationSchema(many=True)
+
 
 class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -186,6 +199,22 @@ class Message(db.Model):
     message_date = db.Column(db.DateTime, nullable=False)
     direction = db.Column(db.Boolean(), nullable=False)
     conversation = db.Column(db.Integer, db.ForeignKey('conversation.id'), nullable=False)
+    direction = db.Column(db.Boolean(), nullable=True)
+
+    def __init__(self, message_text, direction, conversation):
+        self.message_text = message_text
+        self.direction = direction
+        self.conversation = conversation
+        self.message_date = datetime.datetime.now()
+
+
+class MessageSchema(ma.Schema):
+    class Meta:
+        fields = ("id", "message_text", "message_date", "conversation", "direction")
+
+
+message_schema = MessageSchema()
+messages_schema = MessageSchema(many=True)
 
 
 class AppSettings(db.Model):
@@ -415,7 +444,7 @@ def delete_ad_from_favorite(id):
     advertisement = Advertisement.query.get(id)
     current = get_jwt_identity()
     user = User.find_by_email(current)
-    favorite = Favorite.query.filter_by(ad=id,user=user.id).first()
+    favorite = Favorite.query.filter_by(ad=id, user=user.id).first()
 
     db.session.delete(favorite)
     db.session.commit()
@@ -517,6 +546,59 @@ def delete_category(id):
     db.session.delete(category)
     db.session.commit()
     return category_schema.jsonify(category)
+
+
+@app.route('/api/chat', methods=["POST"])
+@jwt_required
+def create_conversation():
+    current = get_jwt_identity()
+    user = User.find_by_email(current)
+    person_b = request.json["id"]
+    conversation = Conversation(user.id, person_b)
+
+    db.session.add(conversation)
+    db.session.commit()
+
+    return conversation_schema.jsonify(conversation)
+
+
+@app.route("/api/chat", methods=["GET"])
+@jwt_required
+def get_conversations():
+    current = get_jwt_identity()
+    user = User.find_by_email(current)
+    conversations = Conversation.query.filter((Conversation.person_a == user.id) | (Conversation.person_b == user.id))
+
+    return conversations_schema.jsonify(conversations)
+
+
+@app.route("/api/chat/<id>", methods=["GET"])
+def get_conversation(id):
+    messages = Message.query.filter_by(conversation=id)
+
+    return messages_schema.jsonify(messages)
+
+
+@app.route("/api/chat/<id>", methods=["POST"])
+@jwt_required
+def create_message(id):
+    current = get_jwt_identity()
+    user = User.find_by_email(current)
+    conversation = Conversation.query.get(id)
+    message_text = request.json["message"]
+    direction = True
+
+    if user.id is conversation.person_b:
+        direction = False
+
+    message = Message(message_text, direction, id)
+
+    db.session.add(message)
+    db.session.commit()
+
+    messages = Message.query.filter_by(conversation=id)
+
+    return messages_schema.jsonify(messages)
 
 
 if __name__ == '__main__':
