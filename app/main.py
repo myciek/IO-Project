@@ -590,12 +590,19 @@ def upload():
 
 
 @app.route('/api/ad', methods=['GET'])
+@jwt_optional
 def get_advertisements():
     all_advertisement = Advertisement.query.all()
-    result = advertisements_schema.dump(all_advertisement)
-    # TODO
-    # filtry wyszukiwania
-    return jsonify(result)
+    user = get_jwt_identity()
+    if user:
+        current = User.find_by_email(user)
+        favorites = Favorite.query.filter_by(user=current.id)
+        for ad in all_advertisement:
+            for fav in favorites:
+                if fav.ad == ad.id:
+                    ad.is_favorite = True
+                    break
+    return advertisements_schema.jsonify(all_advertisement)
 
 
 @app.route('/api/ad/<id>', methods=['GET'])
